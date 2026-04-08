@@ -5,6 +5,8 @@ import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { Topics } from "./collections/Topics";
 import { Users } from "./collections/Users";
+import { translateJob } from "./jobs/translate";
+import { AVAILABLE_LOCALES } from "./locales";
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
@@ -19,9 +21,20 @@ export default buildConfig({
 
   // ── Localization config (article Layer 1) ──────────────────────────────────
   localization: {
-    locales: ["en", "es"],
+    locales: AVAILABLE_LOCALES,
     defaultLocale: "en",
     fallback: true,
+  },
+
+  // ── Jobs config for auto-translation ───────────────────────────────────────
+  jobs: {
+    tasks: [translateJob],
+    autoRun: [
+      {
+        queue: "translation",
+        cron: "* * * * *",
+      },
+    ],
   },
 
   collections: [Users, Topics],

@@ -7,6 +7,16 @@ export const Topics: CollectionConfig = {
   },
   fields: [
     {
+      type: "ui",
+      name: "translateButton",
+      admin: {
+        position: "above",
+        components: {
+          Field: "@/components/TranslateButton",
+        },
+      },
+    },
+    {
       name: "title",
       type: "text",
       localized: true,
@@ -29,6 +39,30 @@ export const Topics: CollectionConfig = {
             components: {
               Field: "@/components/LocalizedTextField",
             },
+          },
+        },
+      ],
+    },
+    {
+      name: "_translationMeta",
+      type: "group",
+      admin: {
+        description: "Metadata about automatic translations",
+        condition: (_, siblingData) => !!siblingData._translationMeta,
+      },
+      fields: [
+        {
+          name: "lastTranslatedAt",
+          type: "date",
+          admin: {
+            readOnly: true,
+          },
+        },
+        {
+          name: "translatedBy",
+          type: "text",
+          admin: {
+            readOnly: true,
           },
         },
       ],

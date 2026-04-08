@@ -11,6 +11,7 @@
     "generate:importmap": "payload generate:importmap"
   },
   "dependencies": {
+    "@azure-rest/ai-translation-text": "^1.0.1",
     "@payloadcms/db-sqlite": "3.79.0",
     "@payloadcms/next": "3.79.0",
     "@payloadcms/richtext-lexical": "3.79.0",
