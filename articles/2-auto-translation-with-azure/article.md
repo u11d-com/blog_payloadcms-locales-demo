@@ -81,6 +81,8 @@ Our solution has five components working together:
 - **Force Mode** - Option to re-translate everything
 - **Metadata Tracking** - Know what was auto-translated and when
 
+> **📘 Tutorial Scope:** This article focuses on translating a single collection (Resources) to keep the implementation clear and easy to follow. For a production-ready approach with type-safe field extractors, update data builders, and support for multiple collections, check out the [complete implementation on GitHub](https://github.com/yourusername/payload-locale-test). Don't forget to ⭐ the repo!
+
 ## Prerequisites
 
 Before implementing, ensure you have:
@@ -320,48 +322,21 @@ For a document with 50 localized fields:
 
 ### Step 4: Create Payload Background Job
 
-Background jobs prevent timeout issues and allow progress tracking:
+Background jobs prevent timeout issues and allow progress tracking. This tutorial focuses on translating the Resources collection for clarity. For a production-ready multi-collection approach with advanced type safety, see our [complete implementation on GitHub](https://github.com/yourusername/payload-locale-test) ⭐.
 
 ```typescript
-// src/jobs/translate.ts
-import { CollectionSlug, TaskConfig, TypedLocale } from "payload";
+// src/jobs/translateResource.ts
+import { TaskConfig, TypedLocale } from "payload";
 import { batchTranslate } from "../services/translationService";
 import { retry } from "radash";
 import { isValidLocale } from "@/locales";
 import { Resource } from "@/payload-types";
-
-// Collection type mapping for type safety
-type CollectionDocTypes = {
-  resources: Resource;
-  // users: User; // Add when implementing user translations
-};
-
-type SupportedCollectionSlug = keyof CollectionDocTypes;
 
 interface FieldToTranslate {
   path: string;
   value: string;
   locale: string;
   id?: string;
-}
-
-// Typed extractor interface for fields to translate
-interface FieldsExtractor<T extends SupportedCollectionSlug> {
-  (args: {
-    englishDoc: CollectionDocTypes[T];
-    targetDoc: CollectionDocTypes[T];
-    force: boolean;
-    targetLocale: TypedLocale;
-  }): FieldToTranslate[];
-}
-
-// Typed builder interface for update data
-interface UpdateDataBuilder<T extends SupportedCollectionSlug> {
-  (args: {
-    englishDoc: CollectionDocTypes[T];
-    targetDoc: CollectionDocTypes[T];
-    translationsByPath: Record<string, string>;
-  }): Partial<CollectionDocTypes[T]>;
 }
 
 function isEmpty(value: unknown): boolean {
@@ -371,42 +346,33 @@ function isEmpty(value: unknown): boolean {
 }
 
 function shouldTranslate(
-  force: boolean | null | undefined,
-  sourceValue: string | undefined | null,
-  targetValue: string | undefined | null,
-) {
+  force: boolean,
+  sourceValue: string | null | undefined,
+  targetValue: string | null | undefined,
+): boolean {
   if (isEmpty(sourceValue)) return false;
   if (force) return true;
   return isEmpty(targetValue);
 }
 
-type GetFieldsToTranslateArgs = {
-  jobId: number;
-  slug: CollectionSlug;
-  targetLocale: TypedLocale;
-  englishDoc: unknown;
-  targetDoc: unknown;
-  force: boolean;
-};
-
-const extractResourceFieldsToTranslate: FieldsExtractor<"resources"> = ({
-  englishDoc,
-  targetDoc,
-  force,
-  targetLocale,
-}) => {
+function extractFieldsToTranslate(
+  englishDoc: Resource,
+  targetDoc: Resource,
+  force: boolean,
+  targetLocale: TypedLocale,
+): FieldToTranslate[] {
   const fieldsToTranslate: FieldToTranslate[] = [];
 
-  if (englishDoc.title) {
-    if (shouldTranslate(force, englishDoc.title, targetDoc.title)) {
-      fieldsToTranslate.push({
-        path: "title",
-        value: englishDoc.title,
-        locale: targetLocale,
-      });
-    }
+  // Extract title field
+  if (shouldTranslate(force, englishDoc.title, targetDoc.title)) {
+    fieldsToTranslate.push({
+      path: "title",
+      value: englishDoc.title,
+      locale: targetLocale,
+    });
   }
 
+  // Extract list array fields
   if (Array.isArray(englishDoc.list)) {
     englishDoc.list.forEach((englishItem, index) => {
       if (!englishItem.id) return;
@@ -415,13 +381,10 @@ const extractResourceFieldsToTranslate: FieldsExtractor<"resources"> = ({
         ? targetDoc.list.find((t) => t.id === englishItem.id)
         : null;
 
-      if (
-        englishItem.name &&
-        shouldTranslate(force, englishItem.name, targetItem?.name)
-      ) {
+      if (shouldTranslate(force, englishItem.name, targetItem?.name)) {
         fieldsToTranslate.push({
           path: `list.${index}.name`,
-          value: englishItem.name,
+          value: englishItem.name!,
           locale: targetLocale,
           id: englishItem.id,
         });
@@ -430,65 +393,25 @@ const extractResourceFieldsToTranslate: FieldsExtractor<"resources"> = ({
   }
 
   return fieldsToTranslate;
-};
-
-// Registry of field extractors by collection slug
-const fieldsExtractors: {
-  [K in SupportedCollectionSlug]: FieldsExtractor<K>;
-} = {
-  resources: extractResourceFieldsToTranslate,
-};
-
-function getFieldsToTranslate({
-  jobId,
-  slug,
-  targetLocale,
-  englishDoc,
-  targetDoc,
-  force,
-}: GetFieldsToTranslateArgs): FieldToTranslate[] {
-  const extractor = fieldsExtractors[slug as SupportedCollectionSlug];
-
-  if (extractor) {
-    return extractor({
-      // Type assertion is safe here because:
-      // 1. Documents come from Payload's generic system (typed as unknown)
-      // 2. The registry ensures each slug maps to correctly typed extractor
-      // 3. Runtime slug lookup guarantees type alignment
-      englishDoc: englishDoc as any,
-      targetDoc: targetDoc as any,
-      force,
-      targetLocale,
-    });
-  }
-
-  // When adding new collections:
-  // 1. Add type to CollectionDocTypes
-  // 2. Create extractor function with FieldsExtractor<"collectionName"> type
-  // 3. Add to fieldsExtractors registry
-
-  console.warn(
-    `[Job ${jobId}] Translations are not supported for slug: ${slug}`,
-  );
-
-  return [];
 }
 
-const buildResourceUpdateData: UpdateDataBuilder<"resources"> = ({
-  englishDoc,
-  targetDoc,
-  translationsByPath,
-}) => {
+function buildUpdateData(
+  englishDoc: Resource,
+  targetDoc: Resource,
+  translationsByPath: Record<string, string>,
+): Partial<Resource> {
   const updateData: Partial<Resource> = {
     ...targetDoc,
   };
 
+  // Update title
   if (translationsByPath["title"]) {
     updateData.title = translationsByPath["title"];
   } else if (isEmpty(targetDoc.title) && englishDoc.title) {
     updateData.title = englishDoc.title;
   }
 
+  // Update list array
   if (Array.isArray(englishDoc.list)) {
     const targetItemsById = new Map(
       Array.isArray(targetDoc.list)
@@ -516,49 +439,6 @@ const buildResourceUpdateData: UpdateDataBuilder<"resources"> = ({
   }
 
   return updateData;
-};
-
-// Registry of update data builders by collection slug
-const updateDataBuilders: {
-  [K in SupportedCollectionSlug]: UpdateDataBuilder<K>;
-} = {
-  resources: buildResourceUpdateData,
-};
-
-type GetUpdateDataArgs = {
-  slug: CollectionSlug;
-  englishDoc: unknown;
-  targetDoc: unknown;
-  translationsByPath: Record<string, string>;
-};
-
-function getUpdateData({
-  slug,
-  englishDoc,
-  targetDoc,
-  translationsByPath,
-}: GetUpdateDataArgs) {
-  const builder = updateDataBuilders[slug as SupportedCollectionSlug];
-
-  if (builder) {
-    return builder({
-      // Type assertion is safe here because:
-      // 1. Documents come from Payload's generic system (typed as unknown)
-      // 2. The registry ensures each slug maps to correctly typed builder
-      // 3. Runtime slug lookup guarantees type alignment
-      englishDoc: englishDoc as any,
-      targetDoc: targetDoc as any,
-      translationsByPath,
-    });
-  }
-
-  // When adding new collections:
-  // 1. Add type to CollectionDocTypes
-  // 2. Create builder function with UpdateDataBuilder<"collectionName"> type
-  // 3. Add to updateDataBuilders registry
-
-  console.warn(`Update data mapper not implemented for slug: ${slug}`);
-  return null;
 }
 
 async function executeBatchTranslation(
@@ -586,14 +466,9 @@ async function executeBatchTranslation(
   return translationsByPath;
 }
 
-export const translateJob: TaskConfig<"translate"> = {
-  slug: "translate",
+export const translateResourceJob: TaskConfig<"translateResource"> = {
+  slug: "translateResource",
   inputSchema: [
-    {
-      name: "collectionSlug",
-      type: "text",
-      required: true,
-    },
     {
       name: "documentId",
       type: "text",
@@ -634,25 +509,24 @@ export const translateJob: TaskConfig<"translate"> = {
   ],
   handler: async ({ input, job, req }) => {
     const { payload } = req;
-    const { collectionSlug, documentId, force } = input;
+    const { documentId, force } = input;
     const locales = input.locales.map(({ locale }) => locale);
-    const typedCollectionSlug = collectionSlug as CollectionSlug;
 
     console.log(
-      `[Job ${job.id}] Translation started for ${collectionSlug}:${documentId}`,
+      `[Job ${job.id}] Translation started for resources:${documentId}`,
       { locales, force },
     );
 
     try {
       const englishDoc = await payload.findByID({
-        collection: typedCollectionSlug,
+        collection: "resources",
         id: documentId,
         locale: "en",
         depth: 0,
       });
 
       if (!englishDoc) {
-        throw new Error(`Document not found: ${collectionSlug}:${documentId}`);
+        throw new Error(`Resource not found: ${documentId}`);
       }
 
       const totalTranslatedCounts: Record<string, number> = {};
@@ -668,19 +542,17 @@ export const translateJob: TaskConfig<"translate"> = {
         }
 
         const targetDoc = await payload.findByID({
-          collection: typedCollectionSlug,
+          collection: "resources",
           id: documentId,
           locale: targetLocale,
         });
 
-        const fieldsToTranslate = getFieldsToTranslate({
-          jobId: job.id,
-          englishDoc,
-          slug: typedCollectionSlug,
-          targetDoc,
+        const fieldsToTranslate = extractFieldsToTranslate(
+          englishDoc as Resource,
+          targetDoc as Resource,
+          force || false,
           targetLocale,
-          force: force || false,
-        });
+        );
 
         if (fieldsToTranslate.length === 0) {
           console.log(
@@ -696,19 +568,11 @@ export const translateJob: TaskConfig<"translate"> = {
         const translationsByPath =
           await executeBatchTranslation(fieldsToTranslate);
 
-        const updateData = getUpdateData({
-          slug: typedCollectionSlug,
-          englishDoc,
-          targetDoc,
+        const updateData = buildUpdateData(
+          englishDoc as Resource,
+          targetDoc as Resource,
           translationsByPath,
-        });
-
-        if (!updateData) {
-          console.warn(
-            `[Job ${job.id}] No update data generated for slug: ${typedCollectionSlug}`,
-          );
-          continue;
-        }
+        );
 
         updateData._translationMeta = {
           lastTranslatedAt: new Date().toISOString(),
@@ -716,7 +580,7 @@ export const translateJob: TaskConfig<"translate"> = {
         };
 
         await payload.update({
-          collection: typedCollectionSlug,
+          collection: "resources",
           id: documentId,
           locale: targetLocale,
           data: updateData,
@@ -752,12 +616,15 @@ export const translateJob: TaskConfig<"translate"> = {
 
 **What This Does:**
 
-1. **Selective Translation** - Only translates empty fields by default
-2. **Force Mode** - Option to re-translate all fields
-3. **Retry Logic** - 3 attempts with 1-second delays
-4. **Structure Preservation** - Maintains array order and IDs
-5. **Fallback** - Uses English value if translation fails
-6. **Metadata Tracking** - Records when and how translation occurred
+1. **Simple & Focused** - Handles only Resources collection for tutorial clarity
+2. **Selective Translation** - Only translates empty fields by default
+3. **Force Mode** - Option to re-translate all fields
+4. **Retry Logic** - 3 attempts with 1-second delays
+5. **Structure Preservation** - Maintains array order and IDs
+6. **Fallback** - Uses English value if translation fails
+7. **Metadata Tracking** - Records when and how translation occurred
+
+> **💡 Want to translate multiple collections?** This tutorial simplifies the code for learning purposes. For a production-ready implementation with type-safe mappers, field extractors, and support for multiple collections, check out the [complete codebase on GitHub](https://github.com/yourusername/payload-locale-test) and give it a ⭐!
 
 ### Step 5: Create API Route for Job Queueing
 
@@ -790,12 +657,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { collectionSlug, documentId, locales, force } = body;
+    const { documentId, locales, force } = body;
 
-    if (!collectionSlug || !documentId || !locales) {
+    if (!documentId || !locales) {
       return NextResponse.json(
         {
-          error: "Missing required fields: collectionSlug, documentId, locales",
+          error: "Missing required fields: documentId, locales",
         },
         { status: 400 },
       );
@@ -809,17 +676,17 @@ export async function POST(request: NextRequest) {
     }
 
     const job = await payload.jobs.queue({
-      task: "translate",
+      task: "translateResource",
       input: {
-        collectionSlug,
         documentId,
         locales: locales.map((locale: string) => ({ locale })),
         force: force || false,
       },
+      queue: "translation",
     });
 
     console.log(
-      `Translation job queued: ${job.id} for ${collectionSlug}:${documentId}`,
+      `Translation job queued: ${job.id} for resources:${documentId}`,
       { locales },
     );
 
@@ -861,13 +728,13 @@ import { toast, Button, useModal, useDocumentInfo } from "@payloadcms/ui";
 import { LOCALES_WITHOUT_EN, TranslateModal } from "./TranslateModal";
 
 export const TranslateButton: React.FC = () => {
-  const { id, collectionSlug } = useDocumentInfo();
+  const { id } = useDocumentInfo();
   const [isLoading, setIsLoading] = useState(false);
   const { openModal } = useModal();
 
   const handleTranslateClick = async () => {
-    if (!id || !collectionSlug) {
-      toast.error("Document ID and collection are required");
+    if (!id) {
+      toast.error("Document ID is required");
       return;
     }
 
@@ -888,7 +755,7 @@ export const TranslateButton: React.FC = () => {
     }
   };
 
-  if (!id || !collectionSlug) {
+  if (!id) {
     return null;
   }
 
@@ -925,7 +792,7 @@ import { LOCALES_WITHOUT_EN } from "@/locales";
 
 export const TranslateModal: React.FC = () => {
   const { closeModal } = useModal();
-  const { id, collectionSlug } = useDocumentInfo();
+  const { id } = useDocumentInfo();
   const [selectedLocales, setSelectedLocales] = useState<Set<string>>(
     new Set(),
   );
@@ -956,15 +823,14 @@ export const TranslateModal: React.FC = () => {
       return;
     }
 
-    if (!id || !collectionSlug) {
-      toast.error("Document ID and collection are required");
+    if (!id) {
+      toast.error("Document ID is required");
       return;
     }
 
     setIsSubmitting(true);
 
     const body = {
-      collectionSlug,
       documentId: id.toString(),
       locales: Array.from(selectedLocales),
       force,
@@ -1217,7 +1083,7 @@ import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { Resources } from "./collections/Resources";
 import { Users } from "./collections/Users";
-import { translateJob } from "./jobs/translate";
+import { translateResourceJob } from "./jobs/translateResource";
 import { AVAILABLE_LOCALES } from "./locales";
 
 const filename = fileURLToPath(import.meta.url);
@@ -1240,7 +1106,7 @@ export default buildConfig({
 
   // Jobs config for auto-translation
   jobs: {
-    tasks: [translateJob],
+    tasks: [translateResourceJob],
   },
 
   collections: [Users, Resources],
@@ -1640,9 +1506,8 @@ const Resources: CollectionConfig = {
           if (changedFields.length > 0) {
             // Queue translation job for changed fields only
             await req.payload.jobs.queue({
-              task: "translate",
+              task: "translateResource",
               input: {
-                collectionSlug: "resources",
                 documentId: data.id,
                 locales: LOCALES_WITHOUT_EN.map((l) => ({ locale: l })),
                 force: false,

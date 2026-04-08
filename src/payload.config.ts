@@ -5,7 +5,7 @@ import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { Resources } from "./collections/Resources";
 import { Users } from "./collections/Users";
-import { translateJob } from "./jobs/translate";
+import { translateResourceJob } from "./jobs/translateResource";
 import { AVAILABLE_LOCALES } from "./locales";
 
 const filename = fileURLToPath(import.meta.url);
@@ -28,7 +28,7 @@ export default buildConfig({
 
   // ── Jobs config for auto-translation ───────────────────────────────────────
   jobs: {
-    tasks: [translateJob],
+    tasks: [translateResourceJob],
     autoRun: [
       {
         queue: "translation",

@@ -522,3 +522,4 @@ Localized fields in Payload CMS arrays work correctly by design, but the default
 - [Payload CMS Localization Docs](https://payloadcms.com/docs/configuration/localization)
 - [Payload Custom Components](https://payloadcms.com/docs/admin/components)
 - [Next.js API Routes](https://nextjs.org/docs/app/building-your-application/routing/route-handlers)
+- [Complete Code on GitHub](https://github.com/yourusername/payload-locale-test) - Full implementation with auto-translation ⭐

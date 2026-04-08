@@ -23,12 +23,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { collectionSlug, documentId, locales, force } = body;
+    const { documentId, locales, force } = body;
 
-    if (!collectionSlug || !documentId || !locales) {
+    if (!documentId || !locales) {
       return NextResponse.json(
         {
-          error: "Missing required fields: collectionSlug, documentId, locales",
+          error: "Missing required fields: documentId, locales",
         },
         { status: 400 },
       );
@@ -42,9 +42,8 @@ export async function POST(request: NextRequest) {
     }
 
     const job = await payload.jobs.queue({
-      task: "translate",
+      task: "translateResource",
       input: {
-        collectionSlug,
         documentId,
         locales: locales.map((locale: string) => ({ locale })),
         force: force || false,
@@ -53,7 +52,7 @@ export async function POST(request: NextRequest) {
     });
 
     console.log(
-      `Translation job queued: ${job.id} for ${collectionSlug}:${documentId}`,
+      `Translation job queued: ${job.id} for resources:${documentId}`,
       { locales },
     );
 

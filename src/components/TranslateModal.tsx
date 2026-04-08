@@ -43,15 +43,14 @@ export const TranslateModal: React.FC = () => {
       return;
     }
 
-    if (!id || !collectionSlug) {
-      toast.error("Document ID and collection are required");
+    if (!id) {
+      toast.error("Document ID is required");
       return;
     }
 
     setIsSubmitting(true);
 
     const body = {
-      collectionSlug,
       documentId: id.toString(),
       locales: Array.from(selectedLocales),
       force,
