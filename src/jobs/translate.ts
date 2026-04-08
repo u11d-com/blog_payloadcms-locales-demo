@@ -2,10 +2,10 @@ import { CollectionSlug, TaskConfig, TypedLocale } from "payload";
 import { batchTranslate } from "../services/translationService";
 import { retry } from "radash";
 import { isValidLocale } from "@/locales";
-import { Topic } from "@/payload-types";
+import { Resource } from "@/payload-types";
 
 type CollectionDocTypes = {
-  topics: Topic;
+  resources: Resource;
   // users: User; // Add when implementing user translations
   // [key: string]: never; // Prevent unmapped collections at compile time
 };
@@ -61,7 +61,7 @@ type GetFieldsToTranslateArgs = {
   force: boolean;
 };
 
-const extractTopicFieldsToTranslate: FieldsExtractor<"topics"> = ({
+const extractResourceFieldsToTranslate: FieldsExtractor<"resources"> = ({
   englishDoc,
   targetDoc,
   force,
@@ -107,7 +107,7 @@ const extractTopicFieldsToTranslate: FieldsExtractor<"topics"> = ({
 const fieldsExtractors: {
   [K in SupportedCollectionSlug]: FieldsExtractor<K>;
 } = {
-  topics: extractTopicFieldsToTranslate,
+  resources: extractResourceFieldsToTranslate,
 };
 
 function getFieldsToTranslate({
@@ -145,12 +145,12 @@ function getFieldsToTranslate({
   return [];
 }
 
-const buildTopicUpdateData: UpdateDataBuilder<"topics"> = ({
+const buildResourceUpdateData: UpdateDataBuilder<"resources"> = ({
   englishDoc,
   targetDoc,
   translationsByPath,
 }) => {
-  const updateData: Partial<Topic> = {
+  const updateData: Partial<Resource> = {
     ...targetDoc,
   };
 
@@ -192,7 +192,7 @@ const buildTopicUpdateData: UpdateDataBuilder<"topics"> = ({
 const updateDataBuilders: {
   [K in SupportedCollectionSlug]: UpdateDataBuilder<K>;
 } = {
-  topics: buildTopicUpdateData,
+  resources: buildResourceUpdateData,
 };
 
 type GetUpdateDataArgs = {

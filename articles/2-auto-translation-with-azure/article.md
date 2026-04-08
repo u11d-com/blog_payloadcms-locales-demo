@@ -328,11 +328,11 @@ import { CollectionSlug, TaskConfig, TypedLocale } from "payload";
 import { batchTranslate } from "../services/translationService";
 import { retry } from "radash";
 import { isValidLocale } from "@/locales";
-import { Topic } from "@/payload-types";
+import { Resource } from "@/payload-types";
 
 // Collection type mapping for type safety
 type CollectionDocTypes = {
-  topics: Topic;
+  resources: Resource;
   // users: User; // Add when implementing user translations
 };
 
@@ -389,7 +389,7 @@ type GetFieldsToTranslateArgs = {
   force: boolean;
 };
 
-const extractTopicFieldsToTranslate: FieldsExtractor<"topics"> = ({
+const extractResourceFieldsToTranslate: FieldsExtractor<"resources"> = ({
   englishDoc,
   targetDoc,
   force,
@@ -436,7 +436,7 @@ const extractTopicFieldsToTranslate: FieldsExtractor<"topics"> = ({
 const fieldsExtractors: {
   [K in SupportedCollectionSlug]: FieldsExtractor<K>;
 } = {
-  topics: extractTopicFieldsToTranslate,
+  resources: extractResourceFieldsToTranslate,
 };
 
 function getFieldsToTranslate({
@@ -474,12 +474,12 @@ function getFieldsToTranslate({
   return [];
 }
 
-const buildTopicUpdateData: UpdateDataBuilder<"topics"> = ({
+const buildResourceUpdateData: UpdateDataBuilder<"resources"> = ({
   englishDoc,
   targetDoc,
   translationsByPath,
 }) => {
-  const updateData: Partial<Topic> = {
+  const updateData: Partial<Resource> = {
     ...targetDoc,
   };
 
@@ -522,7 +522,7 @@ const buildTopicUpdateData: UpdateDataBuilder<"topics"> = ({
 const updateDataBuilders: {
   [K in SupportedCollectionSlug]: UpdateDataBuilder<K>;
 } = {
-  topics: buildTopicUpdateData,
+  resources: buildResourceUpdateData,
 };
 
 type GetUpdateDataArgs = {
@@ -1135,11 +1135,11 @@ export const TranslateModal: React.FC = () => {
 Add the translate button and metadata tracking:
 
 ```typescript
-// src/collections/Topics.ts
+// src/collections/Resources.ts
 import type { CollectionConfig } from "payload";
 
-export const Topics: CollectionConfig = {
-  slug: "topics",
+export const Resources: CollectionConfig = {
+  slug: "resources",
   admin: {
     useAsTitle: "title",
     components: {
@@ -1215,7 +1215,7 @@ import { buildConfig } from "payload";
 import { fileURLToPath } from "url";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
-import { Topics } from "./collections/Topics";
+import { Resources } from "./collections/Resources";
 import { Users } from "./collections/Users";
 import { translateJob } from "./jobs/translate";
 import { AVAILABLE_LOCALES } from "./locales";
@@ -1243,7 +1243,7 @@ export default buildConfig({
     tasks: [translateJob],
   },
 
-  collections: [Users, Topics],
+  collections: [Users, Resources],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || "dev-secret-change-me",
   typescript: {
@@ -1371,7 +1371,7 @@ if (sourceValue) {
 The job handler logs progress:
 
 ```
-[Job abc123] Translation started for topics:65f7a...
+[Job abc123] Translation started for resources:65f7a...
 [Job abc123] Processing locale: es
 [Job abc123] Translating 15 fields for es
 [Job abc123] Translation completed. Total: 15
@@ -1628,8 +1628,8 @@ Instead of manually triggering translations, you can automatically translate fie
 
 ```typescript
 // In your collection config
-const Topics: CollectionConfig = {
-  slug: "topics",
+const Resources: CollectionConfig = {
+  slug: "resources",
   hooks: {
     beforeChange: [
       async ({ data, req, operation, originalDoc }) => {
@@ -1642,7 +1642,7 @@ const Topics: CollectionConfig = {
             await req.payload.jobs.queue({
               task: "translate",
               input: {
-                collectionSlug: "topics",
+                collectionSlug: "resources",
                 documentId: data.id,
                 locales: LOCALES_WITHOUT_EN.map((l) => ({ locale: l })),
                 force: false,

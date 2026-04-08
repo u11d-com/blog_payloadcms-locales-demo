@@ -383,11 +383,11 @@ export default LocalizedTextField;
 Update your collection to use the custom component:
 
 ```tsx
-// src/collections/Topics.ts
+// src/collections/Resources.ts
 import type { CollectionConfig } from "payload";
 
-export const Topics: CollectionConfig = {
-  slug: "topics",
+export const Resources: CollectionConfig = {
+  slug: "resources",
   admin: {
     useAsTitle: "title",
   },

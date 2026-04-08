@@ -3,7 +3,7 @@ import { buildConfig } from "payload";
 import { fileURLToPath } from "url";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
-import { Topics } from "./collections/Topics";
+import { Resources } from "./collections/Resources";
 import { Users } from "./collections/Users";
 import { translateJob } from "./jobs/translate";
 import { AVAILABLE_LOCALES } from "./locales";
@@ -37,7 +37,7 @@ export default buildConfig({
     ],
   },
 
-  collections: [Users, Topics],
+  collections: [Users, Resources],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || "dev-secret-change-me",
   typescript: {
