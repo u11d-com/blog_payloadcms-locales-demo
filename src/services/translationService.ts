@@ -25,11 +25,11 @@ export interface BatchTranslationResult {
   fromCache: boolean;
 }
 
-const CACHE_TTL = 365 * 24 * 60 * 60;
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const translationCache = new LRUCache<string, string>({
   max: 10000,
-  ttl: CACHE_TTL * 1000,
+  ttl: CACHE_TTL_MS,
   ttlAutopurge: true,
 });
 
