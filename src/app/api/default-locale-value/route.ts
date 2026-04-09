@@ -2,13 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { CollectionSlug, getPayload } from "payload";
 import config from "@/payload.config";
 import { get } from "radash";
-import { LRUCache } from "lru-cache";
 
-// LRU cache with size limit and TTL
-const cache = new LRUCache<string, { value: string | null }>({
-  max: 500, // Maximum 500 entries
-  ttl: 60000, // 1 minute TTL
-});
+async function getDefaultLocaleValue(
+  collectionSlug: CollectionSlug,
+  documentId: string,
+  fieldPath: string,
+) {
+  "use cache";
+
+  const payload = await getPayload({ config });
+
+  const doc = await payload.findByID({
+    collection: collectionSlug,
+    id: documentId,
+    locale: "en",
+    depth: 0,
+  });
+
+  if (!doc) {
+    return null;
+  }
+
+  const pathParts = fieldPath.split(".");
+  let value = doc;
+
+  for (const part of pathParts) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    value = get(value, part);
+  }
+
+  return typeof value === "string" ? value : null;
+}
+
+export const cacheLife = { seconds: 60 };
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,8 +53,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const payload = await getPayload({ config });
-
     const cookies = request.cookies;
     const payloadToken = cookies.get("payload-token");
 
@@ -33,51 +60,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const payload = await getPayload({ config });
+
     try {
       const { user } = await payload.auth({ headers: request.headers });
       if (!user) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
+
+      const value = await getDefaultLocaleValue(
+        collectionSlug,
+        documentId,
+        fieldPath,
+      );
+
+      return NextResponse.json({ value });
     } catch (authError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const cacheKey = `${collectionSlug}:${documentId}:${fieldPath}`;
-    const cached = cache.get(cacheKey);
-
-    if (cached !== undefined) {
-      return NextResponse.json({ value: cached.value });
-    }
-
-    const doc = await payload.findByID({
-      collection: collectionSlug,
-      id: documentId,
-      locale: "en",
-      depth: 0,
-    });
-
-    if (!doc) {
-      return NextResponse.json({ value: null });
-    }
-
-    // Navigate to the field using the path (e.g., "title" or "list.0.name")
-    const pathParts = fieldPath.split(".");
-    let value = doc;
-
-    for (const part of pathParts) {
-      if (value === null || value === undefined) {
-        cache.set(cacheKey, { value: null });
-        return NextResponse.json({ value: null });
-      }
-
-      value = get(value, part);
-    }
-
-    const result = typeof value === "string" ? value : null;
-
-    cache.set(cacheKey, { value: result });
-
-    return NextResponse.json({ value: result });
   } catch (error) {
     console.error("Failed to fetch English value:", error);
     return NextResponse.json(
