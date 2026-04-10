@@ -50,7 +50,7 @@ async function translateWithAzure(
   const endpoint =
     process.env.AZURE_TRANSLATOR_ENDPOINT ||
     "https://api.cognitive.microsofttranslator.com";
-  const region = process.env.AZURE_TRANSLATOR_REGION || "global";
+  const region = process.env.AZURE_TRANSLATOR_REGION || "eastus";
 
   if (!apiKey) {
     throw new Error(
