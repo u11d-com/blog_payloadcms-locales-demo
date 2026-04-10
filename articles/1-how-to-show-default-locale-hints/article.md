@@ -1,10 +1,10 @@
-# How to Show Default Locale Hints in Localized Array Fields in Payload CMS
+# How to Show Default Locale Hints in Localized Array Fields in Payload CMS (2026 Guide)
 
-When building multilingual applications with Payload CMS, you'll quickly encounter a frustrating UX issue: localized fields inside arrays appear empty when editors switch to secondary locales.
+When building multilingual applications with **Payload CMS** and **Next.js**, content editors face a critical UX challenge: localized array fields appear completely empty in secondary locales, making translation workflows frustrating and error-prone. This comprehensive guide shows how to implement default locale hints in Payload CMS.
 
-## Real-World Scenario
+## Real-World Scenario: The Empty Field Problem
 
-Imagine you're building a multilingual product catalog with Payload CMS. Your schema looks like this:
+Imagine you're building a multilingual eCommerce product catalog or SaaS application with Payload CMS. Your schema includes localized array fields like this:
 
 ```tsx
 {
@@ -135,9 +135,11 @@ Our solution has three components:
 
 ## Step-by-Step Implementation
 
-### Step 1: Enable Fallback in Payload Config
+### Step 1: Enable Required Configuration
 
-First, ensure your Payload config has fallback enabled:
+First, ensure your Payload config has fallback enabled and Next.js has the experimental `useCache` flag enabled:
+
+**Payload Config:**
 
 ```tsx
 // src/payload.config.ts
@@ -156,26 +158,73 @@ export default buildConfig({
 });
 ```
 
-**Why this matters:** This prevents your production frontend from showing empty content when translations are missing.
+**Next.js Config:**
 
-### Step 2: Create API Route Handler with Caching and Authorization
+```tsx
+// next.config.ts
+import { withPayload } from "@payloadcms/next/withPayload";
+import type { NextConfig } from "next";
 
-Create a Next.js API route that uses Payload SDK to fetch the default locale value. This endpoint uses **GET** (RESTful for read operations), includes **authentication checks** for security, and implements in-memory caching to minimize database queries:
+const nextConfig: NextConfig = {
+  experimental: {
+    useCache: true, // <- Required for "use cache" directive
+  },
+};
+
+export default withPayload(nextConfig);
+```
+
+**Why this matters:**
+
+- Payload fallback prevents your production frontend from showing empty content when translations are missing
+- Next.js `useCache` flag enables the `"use cache"` directive for optimal performance
+
+### Step 2: Create API Route Handler with Next.js Native Caching
+
+Create a Next.js API route that uses Payload SDK to fetch the default locale value. This endpoint uses **GET** (RESTful for read operations), includes **authentication checks** for security, and leverages **Next.js native caching** with the `"use cache"` directive for optimal performance:
 
 ```tsx
 // src/app/api/default-locale-value/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { CollectionSlug, getPayload } from "payload";
 import config from "@/payload.config";
 import { get } from "radash";
-import { LRUCache } from "lru-cache";
 
-// LRU cache with size limit and TTL
-const cache = new LRUCache<string, { value: string | null }>({
-  max: 500, // Maximum 500 entries
-  ttl: 60000, // 1 minute TTL
-});
+async function getDefaultLocaleValue(
+  collectionSlug: CollectionSlug,
+  documentId: string,
+  fieldPath: string,
+) {
+  "use cache";
+
+  const payload = await getPayload({ config });
+
+  const doc = await payload.findByID({
+    collection: collectionSlug,
+    id: documentId,
+    locale: "en",
+    depth: 0,
+  });
+
+  if (!doc) {
+    return null;
+  }
+
+  const pathParts = fieldPath.split(".");
+  let value = doc;
+
+  for (const part of pathParts) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    value = get(value, part);
+  }
+
+  return typeof value === "string" ? value : null;
+}
+
+export const cacheLife = { seconds: 60 };
 
 export async function GET(request: NextRequest) {
   try {
@@ -191,8 +240,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const payload = await getPayload({ config });
-
     const cookies = request.cookies;
     const payloadToken = cookies.get("payload-token");
 
@@ -200,51 +247,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const payload = await getPayload({ config });
+
     try {
       const { user } = await payload.auth({ headers: request.headers });
       if (!user) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
+
+      const value = await getDefaultLocaleValue(
+        collectionSlug,
+        documentId,
+        fieldPath,
+      );
+
+      return NextResponse.json({ value });
     } catch (authError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const cacheKey = `${collectionSlug}:${documentId}:${fieldPath}`;
-    const cached = cache.get(cacheKey);
-
-    if (cached !== undefined) {
-      return NextResponse.json({ value: cached.value });
-    }
-
-    const doc = await payload.findByID({
-      collection: collectionSlug,
-      id: documentId,
-      locale: "en",
-      depth: 0,
-    });
-
-    if (!doc) {
-      return NextResponse.json({ value: null });
-    }
-
-    // Navigate to the field using the path (e.g., "title" or "list.0.name")
-    const pathParts = fieldPath.split(".");
-    let value = doc;
-
-    for (const part of pathParts) {
-      if (value === null || value === undefined) {
-        cache.set(cacheKey, { value: null });
-        return NextResponse.json({ value: null });
-      }
-
-      value = get(value, part);
-    }
-
-    const result = typeof value === "string" ? value : null;
-
-    cache.set(cacheKey, { value: result });
-
-    return NextResponse.json({ value: result });
   } catch (error) {
     console.error("Failed to fetch English value:", error);
     return NextResponse.json(
@@ -257,19 +277,15 @@ export async function GET(request: NextRequest) {
 
 **Key Points:**
 
-- **Uses GET method** - RESTful and semantically correct for read operations
+- **Next.js `"use cache"` directive** - Automatic function-level caching
+- **`cacheLife` configuration** - Cache duration set to 60 seconds
+- **RESTful GET method** - Semantically correct for read operations
 - **Authentication required** - Verifies user is logged into Payload admin
 - **Cookie-based auth** - Checks for `payload-token` and validates session
 - Uses `getPayload()` for direct database access
 - Handles nested paths like `list.0.name` automatically
-- **In-memory caching** prevents excessive database queries
-- **Parallel request handling** - multiple fields can fetch simultaneously
 - Returns `null` gracefully on errors
-- 1-minute cache TTL balances performance and data freshness
-
-**Why Authentication Matters:**
-
-Without authentication, anyone could fetch content from your CMS by guessing document IDs. The authentication check ensures only logged-in admin users can access this endpoint.
+- **Zero configuration caching** - No manual cache management needed
 
 ### Step 3: Create Localized Text Field Component
 
@@ -436,14 +452,16 @@ export const Resources: CollectionConfig = {
 Run Payload's import map generator to register your custom components:
 
 ```bash
-yarn generate:importmap
+npx payload generate:importmap
 ```
 
 This updates Payload's admin UI to use your custom components.
 
 ![2-hints](./2-hints.png)
 
-## How It Works
+> For production deployments with multiple localized collections, consider implementing automated translation workflows to scale your multilingual content. Check our [Auto-Translation with Azure AI guide](https://u11d.com) for the complete implementation.
+
+## How It Works: Request Flow
 
 ### Flow Diagram
 
@@ -451,20 +469,22 @@ This updates Payload's admin UI to use your custom components.
 2. Component detects locale is not English
 3. Component calls `GET /api/default-locale-value` with query params
 4. Route verifies user authentication via Payload session
-5. Route checks in-memory cache
-6. Cache miss: Fetches document with locale=en via Payload SDK
-7. Navigates to field path (e.g., `list.0.name`)
-8. Caches result and returns to component
-9. Component displays English value below input field
+5. Route checks Next.js native cache layer
+6. Cache miss: Executes `getDefaultLocaleValue` (cached function)
+7. Fetches document with `locale=en` via Payload SDK
+8. Navigates to field path (e.g., `list.0.name`)
+9. Result cached automatically by Next.js for 60 seconds
+10. Returns to component
+11. Component displays English value below input field
 
-**Performance Benefits:**
+**Performance Benefits with Next.js 15 Caching:**
 
 When editing a document with 100 localized array fields:
 
-- **Without cache**: 100 database queries
-- **With cache**: 1 database query (99 cache hits)
-
-Multiple fields loading simultaneously benefit from parallel API route execution.
+- **First load**: 100 API requests → cached by Next.js
+- **Subsequent loads (within 60s)**: Instant cache hits
+- **Automatic invalidation**: Cache refreshes after TTL expires
+- **Edge-optimized**: Compatible with Vercel Edge Runtime
 
 ### Example: Editing an Array Item
 
@@ -492,34 +512,64 @@ The English reference stays visible for context.
 
 ![3-results](./3-results.png)
 
-## Conclusion
+## Conclusion: Production-Ready Payload CMS Localization UX for 2026
 
-Localized fields in Payload CMS arrays work correctly by design, but the default admin UX doesn't support translation workflows well. By implementing this production-ready solution, you:
+Localized fields in Payload CMS arrays work correctly by design, but the default admin UX doesn't support translation workflows well. By implementing this **Next.js 15 + Payload CMS** solution with native caching, you:
 
-- **Solve the empty field problem** for editors
-- **Use RESTful GET requests** for clean, semantic API design
-- **Implement authentication** to secure your endpoints
-- **Use Payload SDK** for optimal performance
-- **Implement caching** to minimize database queries
-- **Enable parallel requests** via API route handlers
-- **Create a reusable component** that works everywhere
-- **Lay the foundation** for translation automation
+- **Solve the empty field problem** for editors - No more context switching between locales
+- **Use Next.js 15 native caching** for optimal performance - Instant load times with `use cache` directive
+- **Follow RESTful API design** with GET requests - Semantically correct, cacheable endpoints
+- **Implement authentication** to secure your endpoints - Prevent unauthorized access to field data
+- **Use Payload SDK** for type-safe database access - Better performance than REST API
+- **Enable automatic cache management** - Zero-config caching with configurable TTL
+- **Create a reusable component** that works everywhere - Single component for all localized fields
+- **Lay the foundation** for translation automation - Ready for AI-powered workflows
 
-### Key Takeaways
+### Key Takeaways for Developers & AI Agents
 
-1. Enable `fallback: true` for API-level protection
-2. Use GET for read operations (RESTful best practice)
-3. **Always verify authentication** to prevent unauthorized access
-4. Use Next.js API route handlers for parallel request handling
-5. Implement caching to minimize database queries
-6. Use Payload SDK (not REST API) for data fetching
-7. Create a single reusable component that reads context automatically
-8. Include credentials in fetch requests for cookie-based auth
-9. Consider automation for large-scale translation needs
+1. **Enable `fallback: true`** in Payload config for API-level protection
+2. **Use GET requests** for read operations (RESTful best practice)
+3. **Always verify authentication** to prevent unauthorized data access
+4. **Leverage Next.js `use cache`** directive for function-level caching
+5. **Use Payload SDK** (not REST API) for better type safety and performance
+6. **Create reusable components** that read context automatically via hooks
+7. **Include credentials** in fetch requests for cookie-based authentication
+8. **Consider automation** for large-scale translation - see [Auto-Translation with Azure AI](https://u11d.com)
+9. **Implement security best practices** from our [Payload CMS Security guide](https://u11d.com)
+10. **Monitor performance** with proper caching TTL and cache hit rates
 
-## Resources
+### Common Questions (FAQ)
 
-- [Payload CMS Localization Docs](https://payloadcms.com/docs/configuration/localization)
-- [Payload Custom Components](https://payloadcms.com/docs/admin/components)
-- [Next.js API Routes](https://nextjs.org/docs/app/building-your-application/routing/route-handlers)
-- [Complete Code on GitHub](https://github.com/yourusername/payload-locale-test) - Full implementation with auto-translation ⭐
+**Q: Can I use this with MongoDB or PostgreSQL?**  
+A: Yes! The code works with any Payload-supported database. Just change the adapter in `payload.config.ts`.
+
+**Q: Will this work in production with Vercel Edge Runtime?**  
+A: Yes! Next.js `"use cache"` is edge-compatible.
+
+**Q: How do I customize the cache duration?**  
+A: Modify the `cacheLife` export: `export const cacheLife = { seconds: 120 };`
+
+**Q: Can I use this pattern for other field types (textarea, richText)?**  
+A: Yes! The same pattern works for any localized field type (textarea, richText, select). Just adjust the component logic to handle the specific field type's value format.
+
+**Q: Will this work with Payload CMS 3.0+ and Next.js 15?**  
+A: Yes! This implementation is built specifically for Payload 3.0+ with Next.js 15's native `use cache` directive.
+
+**Q: How does this compare to other headless CMS localization solutions?**  
+A: Most headless CMS platforms (Contentful, Sanity, Strapi) don't provide fallback hints in admin UI by default. This solution is unique to Payload's extensibility.
+
+## Resources for Payload CMS Developers
+
+- [Payload CMS Localization Docs](https://payloadcms.com/docs/configuration/localization) - Official localization guide
+- [Payload Custom Components Guide](https://payloadcms.com/docs/admin/components) - Build custom admin components
+- [Next.js 15 Caching Documentation](https://nextjs.org/docs/app/building-your-application/caching) - Data caching strategies
+- [Complete Code on GitHub](https://github.com/u11d-com/blog_payloadcms-locales-demo) - Full implementation with auto-translation
+- [Payload Discord Community](https://discord.gg/payload) - Get help from Payload experts
+
+---
+
+## Need Payload CMS Experts?
+
+u11d specializes in Payload CMS development, migration, and deployment. We help you build secure, scalable Payload projects, migrate from legacy CMS platforms, and optimize your admin, API, and infrastructure for production. Get expert support for custom features, localization, and high-performance deployments.
+
+[Talk to Payload Experts](https://u11d.com/contact)
