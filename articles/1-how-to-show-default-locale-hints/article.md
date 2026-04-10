@@ -106,22 +106,9 @@ This protects your frontend from showing empty content, but doesn't help editors
 
 Our solution has three components:
 
-```
-┌─────────────────────────────────────────┐
-│  1. Payload Config (fallback: true)     │
-│     └─ API-level protection             │
-└─────────────────────────────────────────┘
-              ↓
-┌─────────────────────────────────────────┐
-│  2. API Route Handler + Auth + Cache    │
-│     └─ Verify auth & fetch via SDK      │
-└─────────────────────────────────────────┘
-              ↓
-┌─────────────────────────────────────────┐
-│  3. Custom Field Component              │
-│     └─ Show fallback in admin UI        │
-└─────────────────────────────────────────┘
-```
+1. Payload Config: API-level protection
+2. API Route Handler + Auth + Cache: Verify auth & fetch via SDK
+3. Custom Field Component: Show fallback in admin UI
 
 **Key Design Decisions:**
 
@@ -166,6 +153,7 @@ import { withPayload } from "@payloadcms/next/withPayload";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  cacheComponents: true,
   experimental: {
     useCache: true, // <- Required for "use cache" directive
   },
@@ -186,6 +174,7 @@ Create a Next.js API route that uses Payload SDK to fetch the default locale val
 ```tsx
 // src/app/api/default-locale-value/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cacheLife as cacheLife } from "next/cache";
 import { CollectionSlug, getPayload } from "payload";
 import config from "@/payload.config";
 import { get } from "radash";
@@ -196,6 +185,7 @@ async function getDefaultLocaleValue(
   fieldPath: string,
 ) {
   "use cache";
+  cacheLife("minutes");
 
   const payload = await getPayload({ config });
 
@@ -223,8 +213,6 @@ async function getDefaultLocaleValue(
 
   return typeof value === "string" ? value : null;
 }
-
-export const cacheLife = { seconds: 60 };
 
 export async function GET(request: NextRequest) {
   try {
@@ -459,7 +447,7 @@ This updates Payload's admin UI to use your custom components.
 
 ![2-hints](./2-hints.png)
 
-> For production deployments with multiple localized collections, consider implementing automated translation workflows to scale your multilingual content. Check our [Auto-Translation with Azure AI guide](https://u11d.com) for the complete implementation.
+> For production deployments with multiple localized collections, consider implementing automated translation workflows to scale your multilingual content. Check our [Auto-Translation with Azure AI guide](https://u11d.com/blog/auto-translation-payload-cms-azure-ai) for the complete implementation.
 
 ## How It Works: Request Flow
 
@@ -534,28 +522,34 @@ Localized fields in Payload CMS arrays work correctly by design, but the default
 5. **Use Payload SDK** (not REST API) for better type safety and performance
 6. **Create reusable components** that read context automatically via hooks
 7. **Include credentials** in fetch requests for cookie-based authentication
-8. **Consider automation** for large-scale translation - see [Auto-Translation with Azure AI](https://u11d.com)
-9. **Implement security best practices** from our [Payload CMS Security guide](https://u11d.com)
+8. **Consider automation** for large-scale translation - see [Auto-Translation with Azure AI](https://u11d.com/)
+9. **Implement security best practices** from our [Payload CMS Security guide](https://u11d.com/)
 10. **Monitor performance** with proper caching TTL and cache hit rates
 
 ### Common Questions (FAQ)
 
-**Q: Can I use this with MongoDB or PostgreSQL?**  
+**Q: Can I use this with MongoDB or PostgreSQL?**
+
 A: Yes! The code works with any Payload-supported database. Just change the adapter in `payload.config.ts`.
 
-**Q: Will this work in production with Vercel Edge Runtime?**  
+**Q: Will this work in production with Vercel Edge Runtime?**
+
 A: Yes! Next.js `"use cache"` is edge-compatible.
 
-**Q: How do I customize the cache duration?**  
-A: Modify the `cacheLife` export: `export const cacheLife = { seconds: 120 };`
+**Q: How do I customize the cache duration?**
 
-**Q: Can I use this pattern for other field types (textarea, richText)?**  
+A: Modify the `cacheLife` function. Check [documentation](https://nextjs.org/docs/app/api-reference/functions/cacheLife#revalidate) for more details.
+
+**Q: Can I use this pattern for other field types (textarea, richText)?**
+
 A: Yes! The same pattern works for any localized field type (textarea, richText, select). Just adjust the component logic to handle the specific field type's value format.
 
-**Q: Will this work with Payload CMS 3.0+ and Next.js 15?**  
+**Q: Will this work with Payload CMS 3.0+ and Next.js 15?**
+
 A: Yes! This implementation is built specifically for Payload 3.0+ with Next.js 15's native `use cache` directive.
 
-**Q: How does this compare to other headless CMS localization solutions?**  
+**Q: How does this compare to other headless CMS localization solutions?**
+
 A: Most headless CMS platforms (Contentful, Sanity, Strapi) don't provide fallback hints in admin UI by default. This solution is unique to Payload's extensibility.
 
 ## Resources for Payload CMS Developers

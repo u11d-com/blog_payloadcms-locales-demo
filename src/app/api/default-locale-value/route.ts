@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cacheLife as cacheLife } from "next/cache";
 import { CollectionSlug, getPayload } from "payload";
 import config from "@/payload.config";
 import { get } from "radash";
@@ -9,6 +10,7 @@ async function getDefaultLocaleValue(
   fieldPath: string,
 ) {
   "use cache";
+  cacheLife("minutes");
 
   const payload = await getPayload({ config });
 
@@ -36,8 +38,6 @@ async function getDefaultLocaleValue(
 
   return typeof value === "string" ? value : null;
 }
-
-export const cacheLife = { seconds: 60 };
 
 export async function GET(request: NextRequest) {
   try {
